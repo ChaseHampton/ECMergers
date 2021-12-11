@@ -2,6 +2,7 @@ import scrapy
 import sqlite3
 from ..items import EcmergerItem
 
+
 class Merger(scrapy.Spider):
     name = 'Merger'
 
@@ -77,8 +78,12 @@ class Merger(scrapy.Spider):
 
     def parse(self, response):
         conn = self.db_conn()
-        total_rows = response.css('.navButton').xpath('./tr/td/text()')[-1].re(r"of (\d{,4})")
-        if response.xpath('//input[@value="Next"]/@onclick').re(r"\d{2,4}") <= total_rows:
+        if 'total_rows' not in response.meta:
+            total_rows = response.css('.navButton').xpath('./tr/td/text()')[-1].re(r"of (\d{,4})")[0]
+        else:
+            total_rows = response.meta['total_rows']
+
+        if int(response.xpath('//input[@value="Next"]/@onclick').re(r"\d{2,4}")[0]) <= int(total_rows):
             page = response.css('.list').xpath('tr[not(descendant::td[contains(@id, "test")])]')
             from_row = response.xpath('//input[@value="Next"]/@onclick').re(r"\d{2,4}")
             self.form_data['fromrow'] = from_row
@@ -96,6 +101,7 @@ class Merger(scrapy.Spider):
                 url=response.url,
                 formdata=self.form_data,
                 headers=self.headers,
+                meta={'total_rows': total_rows},
                 callback=self.parse
             )
         else:
@@ -124,7 +130,6 @@ class Merger(scrapy.Spider):
             item['last_decision_date'] = row[3]
             item['title'] = row[4]
             yield item
-
 
     def db_conn(self):
         try:
