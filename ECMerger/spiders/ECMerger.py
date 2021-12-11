@@ -1,11 +1,13 @@
 import scrapy
 import sqlite3
+from ..items import EcmergerItem
 
 class Merger(scrapy.Spider):
     name = 'Merger'
 
-    def __init(self, reset=False, **kwargs):
+    def __init(self, reset=False, skip=False, **kwargs):
         self.reset = reset
+        self.skip = skip
         super().__init__(**kwargs)
 
     url = 'https://ec.europa.eu/competition/elojade/isef/index.cfm?fuseaction=dsp_result&policy_area_id=1'
@@ -65,10 +67,18 @@ class Merger(scrapy.Spider):
             formdata=self.form_data,
             callback=self.parse
         )
+        # else:
+        #     yield scrapy.FormRequest(
+        #         url=self.url,
+        #         headers=self.headers,
+        #         formdata=self.form_data,
+        #         callback=self.search_cases
+        #     )
 
     def parse(self, response):
         conn = self.db_conn()
-        if response.xpath('//input[@value="Next"]') is not None:
+        total_rows = response.css('.navButton').xpath('./tr/td/text()')[-1].re(r"of (\d{,4})")
+        if response.xpath('//input[@value="Next"]/@onclick').re(r"\d{2,4}") <= total_rows:
             page = response.css('.list').xpath('tr[not(descendant::td[contains(@id, "test")])]')
             from_row = response.xpath('//input[@value="Next"]/@onclick').re(r"\d{2,4}")
             self.form_data['fromrow'] = from_row
@@ -88,6 +98,33 @@ class Merger(scrapy.Spider):
                 headers=self.headers,
                 callback=self.parse
             )
+        else:
+            page = response.css('.list').xpath('tr[not(descendant::td[contains(@id, "test")])]')
+            for row in page:
+                case = row.css('.case')
+                case_no = case.xpath('./span/text()').get()
+                url = response.urljoin(case.xpath('./a/@href').get())
+                dec_date = \
+                    row.css('.decision').xpath('./text()').get().replace('\r', '').replace('\n', '').replace('\t', '')
+                title = row.css('.title').xpath('./text()').get().replace('\r', '').replace('\n', '').replace('\t', '')
+                self.insert_record(conn, [url, case_no, dec_date, title])
+            return self.search_cases(response)
+
+    def search_cases(self, response):
+        conn = self.db_conn()
+        curs = conn.cursor()
+        sql = "SELECT * FROM records"
+        item = EcmergerItem()
+        curs.execute(sql)
+
+        for row in curs.fetchall():
+            item['policy'] = "Mergers"
+            item['case_number'] = row[2]
+            item['member_state'] = ''
+            item['last_decision_date'] = row[3]
+            item['title'] = row[4]
+            yield item
+
 
     def db_conn(self):
         try:
