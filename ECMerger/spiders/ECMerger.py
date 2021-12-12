@@ -143,7 +143,8 @@ class Merger(scrapy.Spider):
             '\n', '').replace('\t', '')
         prior_pub_node = details.xpath('.//tr/td[contains(text(), "Prior publication")]/following-sibling::td')
         journal_no = prior_pub_node.xpath('./a/text()').get()
-        journal_date = prior_pub_node.xpath('./text()').re(r"\d{2}\.\d{2}\.\d{4}")[0]  # pulls out just the date
+        if prior_pub_node.xpath('./text()').re(r"\d{2}\.\d{2}\.\d{4}"):
+            journal_date = prior_pub_node.xpath('./text()').re(r"\d{2}\.\d{2}\.\d{4}")[0]  # pulls out just the date
         nace_node = details.xpath('.//tr/td[contains(text(), "NACE")]/following-sibling::td')
         naces = [f"{i} {j}" for i, j in
                  zip(nace_node.xpath('./a/text()').getall(),
@@ -159,10 +160,30 @@ class Merger(scrapy.Spider):
         decision_1 = {'dec_date': '', 'dec_art': '', 'pub_date': '', 'pub_journ': '', 'text_date': '', 'dec_text': ''}
         decisions = []
         for index, row in enumerate(dec_table.xpath('./tr')[1:]):  # I don't know how I feel about this...
-            if (index > 0 and row.xpath('./td[descendant::strong]')) or index == len(dec_table.xpath('./tr')[1:]):
+            if (index > 0 and row.xpath('./td[descendant::strong]')) or index == len(dec_table.xpath('./tr')[1:])-1:
                 decisions.append(decision_1)
-                decision_1 = {'dec_date': '', 'dec_art': '', 'pub_date': '', 'pub_journ': '', 'text_date': '',
+                decision_1 = {'dec_date': '', 'dec_art': '', 'pub_date': '', 'pub_journ': '', 'pr': '', 'text_date': '',
                               'dec_text': ''}
+                if row.xpath('./td[1]/strong/text()'):
+                    decision_1['dec_date'] = row.xpath('./td[1]/strong/text()').get()
+                if row.xpath('./td[2]/strong/text()'):
+                    decision_1['dec_art'] = row.xpath('./td[2]/strong/text()').re(r"Art. ([\d\(\)\w]*)")
+                if row.xpath('./td[contains(text(), "Publication")]/following-sibling::td/table//td/text()'):
+                    decision_1['pub_date'] = row.xpath('./td[contains(text(), '
+                                                       '"Publication")]/following-sibling::td/table//td/text()') \
+                        .re(r"\d{2}\.\d{2}\.\d{4}")[0]
+                    decision_1['pub_journ'] = row.xpath('./td[contains(text(), '
+                                                        '"Publication")]/following-sibling::td/table//a/text()').get()
+                if row.xpath('./td[contains(text(), "Press release")]/following-sibling::td/table//a/text()'):
+                    decision_1['pr'] = row.xpath('./td[contains(text(), "Press release")]/'
+                                                 'following-sibling::td/table//a/text()').get()
+                if row.xpath('./td[contains(text(), "Decision text")]//following-sibling::td'):
+                    decision_1['text_date'] = row.xpath('./td[contains(text(), "Decision text")]/following-sibling::'
+                                                        'td//td[not(count(a))]/text()').get().replace('\r', '') \
+                        .replace('\t', '').replace('\n', '').strip()
+                    decision_1['dec_text'] = " ".join(row.xpath('./td[contains(text(), "Decision text")]/'
+                                                                'following-sibling::td//a[not(count(img))]/text()').
+                                                      getall())  # I just figured we might have multiples
             else:  # these might need to have all possible values but for ease I'm only adding what exists
                 if row.xpath('./td[1]/strong/text()'):
                     decision_1['dec_date'] = row.xpath('./td[1]/strong/text()').get()
@@ -187,11 +208,11 @@ class Merger(scrapy.Spider):
             relation = details.xpath('//td[contains(text(), "Relation")]//following-sibling::td/text()').get(). \
                 replace('\r', '').replace('\n', '').replace('\t', '').strip()
             other = " ".join([item.replace('\r', '').replace('\n', '').replace('\t', '').strip() for item in details.
-                             xpath('./tr')[-2].xpath('.//text()').getall() if
+                             xpath('./tr')[-2].xpath('./td[2]//text()').getall() if
                               len(item.replace('\r', '').replace('\n', '').replace('\t', '').strip()) != 0])  # neat.
             # The preceding td could be removed, but we can do that later
             related = " ".join([item.replace('\r', '').replace('\n', '').replace('\t', '').strip() for item
-                                in details.xpath('./tr')[-1].xpath('.//text()').getall() if
+                                in details.xpath('./tr')[-1].xpath('./td[2]//text()').getall() if
                                 len(item.replace('\r', '').replace('\n', '').replace('\t', '').strip()) != 0])  # same
             # with this we can clean up later but the selector should work (fingers crossed)
 
