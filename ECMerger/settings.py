@@ -1,3 +1,4 @@
+import os
 # Scrapy settings for ECMerger project
 #
 # For simplicity, this file contains only settings considered important or
@@ -86,3 +87,5 @@ DOWNLOAD_DELAY = 2.5
 #HTTPCACHE_DIR = 'httpcache'
 #HTTPCACHE_IGNORE_HTTP_CODES = []
 #HTTPCACHE_STORAGE = 'scrapy.extensions.httpcache.FilesystemCacheStorage'
+
+#LOG_FILE = os.path.join(os.getcwd(), "log.txt")

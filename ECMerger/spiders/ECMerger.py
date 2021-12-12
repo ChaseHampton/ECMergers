@@ -82,6 +82,7 @@ class Merger(scrapy.Spider):
             self.form_data['fromrow'] = '8472'  # from_row
             self.form_data['fuseaction'] = 'dsp_result'
             self.form_data['sort'] = 'case_code asc'
+            self.logger.info(f"starting at row: {self.form_data['fromrow']} of {total_rows}")
             for row in page:
                 case = row.css('.case')
                 case_no = case.xpath('./span/text()').get()  # get is the same as extract_first
@@ -116,22 +117,23 @@ class Merger(scrapy.Spider):
 
         curs.execute(sql)
 
-        for row in curs.fetchall():
+        for r in curs.fetchall():
+            self.logger.info(f"looping through curs on case {r[2]}")
             yield scrapy.Request(
-                url=str(row[1]),
+                url=str(r[1]),
                 meta={
                     'policy': '',
-                    'case_number': row[2],
+                    'case_number': r[2],
                     'member_state': '',
-                    'last_decision_date': row[3],
-                    'title': row[4]
+                    'last_decision_date': r[3],
+                    'title': r[4]
                 },
                 callback=self.parse_details
             )
 
     def parse_details(self, response):
         item = EcmergerItem()
-        comps = response.xpath('//div[@id="BodyContent"]//strong/a/text()').getall()
+        comps = [item.strip() for item in response.xpath('//div[@id="BodyContent"]//strong/a/text()').getall()]
         details = response.css('table.details')
         notif_date = details.xpath(
             '//tr/td[contains(text(), "Notification")]/following-sibling::td/text()').get().replace('\r', '').replace(
@@ -168,10 +170,10 @@ class Merger(scrapy.Spider):
                     decision_1['dec_art'] = row.xpath('./td[2]/strong/text()').re(r"Art. ([\d\(\)\w]*)")
                 if row.xpath('./td[contains(text(), "Publication")]/following-sibling::td/table//td/text()'):
                     decision_1['pub_date'] = row.xpath('./td[contains(text(), '
-                                                        '"Publication")]/following-sibling::td/table//td/text()') \
+                                                       '"Publication")]/following-sibling::td/table//td/text()') \
                         .re(r"\d{2}\.\d{2}\.\d{4}")[0]
                     decision_1['pub_journ'] = row.xpath('./td[contains(text(), '
-                                                         '"Publication")]/following-sibling::td/table//a/text()').get()
+                                                        '"Publication")]/following-sibling::td/table//a/text()').get()
                 if row.xpath('./td[contains(text(), "Press release")]/following-sibling::td/table//a/text()'):
                     decision_1['pr'] = row.xpath('./td[contains(text(), "Press release")]/'
                                                  'following-sibling::td/table//a/text()').get()
@@ -182,7 +184,7 @@ class Merger(scrapy.Spider):
                     decision_1['dec_text'] = " ".join(row.xpath('./td[contains(text(), "Decision text")]/'
                                                                 'following-sibling::td//a[not(count(img))]/text()').
                                                       getall())  # I just figured we might have multiples
-            relation =details.xpath('//td[contains(text(), "Relation")]//following-sibling::td/text()').get().\
+            relation = details.xpath('//td[contains(text(), "Relation")]//following-sibling::td/text()').get(). \
                 replace('\r', '').replace('\n', '').replace('\t', '').strip()
             other = " ".join([item.replace('\r', '').replace('\n', '').replace('\t', '').strip() for item in details.
                              xpath('./tr')[-2].xpath('.//text()').getall() if
@@ -193,24 +195,24 @@ class Merger(scrapy.Spider):
                                 len(item.replace('\r', '').replace('\n', '').replace('\t', '').strip()) != 0])  # same
             # with this we can clean up later but the selector should work (fingers crossed)
 
-            for comp in comps:
-                item['policy'] = response.meta['policy']
-                item['case_number'] = response.meta['case_number']
-                item['member_state'] = response.meta['member_state']
-                item['last_decision_date'] = response.meta['last_decision_date']
-                item['title'] = response.meta['title']
-                item['company'] = comp
-                item['notification_date'] = notif_date
-                item['prov_deadline'] = prov_deadline
-                item['prior_pub_journal'] = journal_no
-                item['prior_pub_journal_date'] = journal_date
-                item['naces'] = naces
-                item['regulation'] = reg
-                item['decisions'] = decisions
-                item['relation'] = relation
-                item['other_related'] = other
-                item['rel_links'] = related
-                yield item
+        for comp in comps:
+            item['policy'] = response.meta['policy']
+            item['case_number'] = response.meta['case_number']
+            item['member_state'] = response.meta['member_state']
+            item['last_decision_date'] = response.meta['last_decision_date']
+            item['title'] = response.meta['title']
+            item['company'] = comp
+            item['notification_date'] = notif_date
+            item['prov_deadline'] = prov_deadline
+            item['prior_pub_journal'] = journal_no
+            item['prior_pub_journal_date'] = journal_date
+            item['naces'] = naces
+            item['regulation'] = reg
+            item['decisions'] = decisions
+            item['relation'] = relation
+            item['other_related'] = other
+            item['rel_links'] = related
+            yield item
 
     def db_conn(self):
         try:
