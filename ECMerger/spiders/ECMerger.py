@@ -62,19 +62,20 @@ class Merger(scrapy.Spider):
             self.drop_table(conn)
         self.create_table(conn)
 
-        yield scrapy.FormRequest(
-            url=self.url,
-            headers=self.headers,
-            formdata=self.form_data,
-            callback=self.parse
-        )
-        # else:
-        #     yield scrapy.FormRequest(
-        #         url=self.url,
-        #         headers=self.headers,
-        #         formdata=self.form_data,
-        #         callback=self.search_cases
-        #     )
+        if self.skip:
+            yield scrapy.FormRequest(
+                url=self.url,
+                headers=self.headers,
+                formdata=self.form_data,
+                callback=self.search_cases
+            )
+        else:
+            yield scrapy.FormRequest(
+                url=self.url,
+                headers=self.headers,
+                formdata=self.form_data,
+                callback=self.parse
+            )
 
     def parse(self, response):
         conn = self.db_conn()
@@ -91,7 +92,7 @@ class Merger(scrapy.Spider):
             self.form_data['sort'] = 'case_code asc'
             for row in page:
                 case = row.css('.case')
-                case_no = case.xpath('./span/text()').get()
+                case_no = case.xpath('./span/text()').get()  # get is the same as extract_first
                 url = response.urljoin(case.xpath('./a/@href').get())
                 dec_date = \
                     row.css('.decision').xpath('./text()').get().replace('\r', '').replace('\n', '').replace('\t', '')
@@ -120,16 +121,103 @@ class Merger(scrapy.Spider):
         conn = self.db_conn()
         curs = conn.cursor()
         sql = "SELECT * FROM records"
-        item = EcmergerItem()
+
         curs.execute(sql)
 
         for row in curs.fetchall():
-            item['policy'] = "Mergers"
-            item['case_number'] = row[2]
-            item['member_state'] = ''
-            item['last_decision_date'] = row[3]
-            item['title'] = row[4]
-            yield item
+            yield scrapy.Request(
+                url=str(row[1]),
+                meta={
+                    'policy': '',
+                    'case_number': row[2],
+                    'member_state': '',
+                    'last_decision_date': row[3],
+                    'title': row[4]
+                },
+                callback=self.parse_details
+            )
+
+    def parse_details(self, response):
+        item = EcmergerItem()
+        comps = response.xpath('//div[@id="BodyContent"]//strong/a/text()')
+        details = response.css('table.details')
+        notif_date = details.xpath(
+            '//tr/td[contains(text(), "Notification")]/following-sibling::td/text()').get().replace('\r', '').replace(
+            '\n', '').replace('\t', '')
+        prov_deadline = details.xpath(
+            '//tr/td[contains(text(), "Provisional")]/following-sibling::td/text()').get().replace('\r', '').replace(
+            '\n', '').replace('\t', '')
+        prior_pub_node = details.xpath('.//tr/td[contains(text(), "Prior publication")]/following-sibling::td')
+        journal_no = prior_pub_node.xpath('./a/text()').get()
+        journal_date = prior_pub_node.xpath('./text()').re(r"\d{2}\.\d{2}\.\d{4}")  # pulls out just the date
+        nace_node = details.xpath('.//tr/td[contains(text(), "NACE")]/following-sibling::td')
+        naces = [f"{i} {j}" for i, j in
+                 zip(nace_node.xpath('./a/text()').getall(),
+                     [item.replace('\r', '').replace('\n', '').replace('\t', '').strip()
+                      for item in nace_node.xpath('./text()').getall() if
+                      len(item.replace('\r', '').replace('\n', '').replace('\t', '').strip()) != 0])]  # I didn't
+        # remember how we wanted these formatted but this creates a list of the nace & description | Doesn't have to
+        # be one line, but it was fun. May not work depending on python version.
+        reg = details.xpath('.//tr/td[contains(text(), \
+        "Regulation")]/following-sibling::td/text()').get().replace('\r', '').replace(
+            '\n', '').replace('\t', '').strip()  # pretty sure we break this out. Can look later or we can do in kettle
+        dec_table = details.xpath('.//table[@id="decisions"]')  # pulling out to work with easier
+        decision_1 = {}
+        decisions = []
+        for index, row in enumerate(dec_table.xpath('./tr')[1:]):  # I don't know how I feel about this...
+            if (index > 0 and row.xpath('./td[descendant::strong]')) or index == len(dec_table.xpath('./tr')[1:]):
+                decisions.append(decision_1)
+                decision_1 = {}
+            else:  # these might need to have all possible values but for ease I'm only adding what exists
+                if row.xpath('./td[1]/strong/text()'):
+                    decision_1['dec_date'] += row.xpath('./td[1]/strong/text()').get()
+                if row.xpath('./td[2]/strong/text()'):
+                    decision_1['dec_art'] += row.xpath('./td[2]/strong/text()').re(r"Art. ([\d\(\)\w]*)")
+                if row.xpath('./td[contains(text(), "Publication")]/following-sibling::td/table//td/text()'):
+                    decision_1['pub_date'] += row.xpath('./td[contains(text(), '
+                                                        '"Publication")]/following-sibling::td/table//td/text()') \
+                        .re(r"\d{2}\.\d{2}\.\d{4}")
+                    decision_1['pub_journ'] += row.xpath('./td[contains(text(), '
+                                                         '"Publication")]/following-sibling::td/table//a/text()').get()
+                if row.xpath('./td[contains(text(), "Press release")]/following-sibling::td/table//a/text()'):
+                    decision_1['pr'] = row.xpath('./td[contains(text(), "Press release")]/'
+                                                 'following-sibling::td/table//a/text()').get()
+                if row.xpath('./td[contains(text(), "Decision text")]//following-sibling::td'):
+                    decision_1['text_date'] = row.xpath('./td[contains(text(), "Decision text")]/following-sibling::'
+                                                        'td//td[not(count(a))]/text()').get().replace('\r', '') \
+                        .replace('\t', '').replace('\n', '').strip()
+                    decision_1['dec_text'] = " ".join(row.xpath('./td[contains(text(), "Decision text")]/'
+                                                                'following-sibling::td//a[not(count(img))]/text()').
+                                                      getall())  # I just figured we might have multiples
+            relation =details.xpath('//td[contains(text(), "Relation")]//following-sibling::td/text()').get().\
+                replace('\r', '').replace('\n', '').replace('\t', '').strip()
+            other = " ".join([item.replace('\r', '').replace('\n', '').replace('\t', '').strip() for item in details.
+                             xpath('./tr')[-2].xpath('.//text()').getall() if
+                              len(item.replace('\r', '').replace('\n', '').replace('\t', '').strip()) != 0])  # neat.
+            # The preceding td could be removed, but we can do that later
+            related = " ".join([item.replace('\r', '').replace('\n', '').replace('\t', '').strip() for item
+                                in details.xpath('./tr')[-1].xpath('.//text()').getall() if
+                                len(item.replace('\r', '').replace('\n', '').replace('\t', '').strip()) != 0])  # same
+            # with this we can clean up later but the selector should work (fingers crossed)
+
+            for comp in comps:
+                item['policy'] = response.meta['policy']
+                item['case_number'] = response.meta['case_number']
+                item['member_state'] = response.meta['member_state']
+                item['last_decision_date'] = response.meta['last_decision_date']
+                item['title'] = response.meta['title']
+                item['company'] = comp
+                item['notification_date'] = notif_date
+                item['prov_deadline'] = prov_deadline
+                item['prior_pub_journal'] = journal_no
+                item['prior_pub_journal_date'] = journal_date
+                item['naces'] = naces
+                item['regulation'] = reg
+                item['decisions'] = decisions
+                item['relation'] = relation
+                item['other_related'] = other
+                item['rel_links'] = related
+                yield item
 
     def db_conn(self):
         try:
