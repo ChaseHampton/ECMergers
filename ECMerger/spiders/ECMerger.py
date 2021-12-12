@@ -62,20 +62,12 @@ class Merger(scrapy.Spider):
             self.drop_table(conn)
         self.create_table(conn)
 
-        if self.skip:
-            yield scrapy.FormRequest(
-                url=self.url,
-                headers=self.headers,
-                formdata=self.form_data,
-                callback=self.search_cases
-            )
-        else:
-            yield scrapy.FormRequest(
-                url=self.url,
-                headers=self.headers,
-                formdata=self.form_data,
-                callback=self.parse
-            )
+        yield scrapy.FormRequest(
+            url=self.url,
+            headers=self.headers,
+            formdata=self.form_data,
+            callback=self.parse
+        )
 
     def parse(self, response):
         conn = self.db_conn()
@@ -87,7 +79,7 @@ class Merger(scrapy.Spider):
         if int(response.xpath('//input[@value="Next"]/@onclick').re(r"\d{2,4}")[0]) <= int(total_rows):
             page = response.css('.list').xpath('tr[not(descendant::td[contains(@id, "test")])]')
             from_row = response.xpath('//input[@value="Next"]/@onclick').re(r"\d{2,4}")
-            self.form_data['fromrow'] = from_row
+            self.form_data['fromrow'] = '8472'  # from_row
             self.form_data['fuseaction'] = 'dsp_result'
             self.form_data['sort'] = 'case_code asc'
             for row in page:
@@ -139,7 +131,7 @@ class Merger(scrapy.Spider):
 
     def parse_details(self, response):
         item = EcmergerItem()
-        comps = response.xpath('//div[@id="BodyContent"]//strong/a/text()')
+        comps = response.xpath('//div[@id="BodyContent"]//strong/a/text()').getall()
         details = response.css('table.details')
         notif_date = details.xpath(
             '//tr/td[contains(text(), "Notification")]/following-sibling::td/text()').get().replace('\r', '').replace(
@@ -149,7 +141,7 @@ class Merger(scrapy.Spider):
             '\n', '').replace('\t', '')
         prior_pub_node = details.xpath('.//tr/td[contains(text(), "Prior publication")]/following-sibling::td')
         journal_no = prior_pub_node.xpath('./a/text()').get()
-        journal_date = prior_pub_node.xpath('./text()').re(r"\d{2}\.\d{2}\.\d{4}")  # pulls out just the date
+        journal_date = prior_pub_node.xpath('./text()').re(r"\d{2}\.\d{2}\.\d{4}")[0]  # pulls out just the date
         nace_node = details.xpath('.//tr/td[contains(text(), "NACE")]/following-sibling::td')
         naces = [f"{i} {j}" for i, j in
                  zip(nace_node.xpath('./a/text()').getall(),
@@ -162,22 +154,23 @@ class Merger(scrapy.Spider):
         "Regulation")]/following-sibling::td/text()').get().replace('\r', '').replace(
             '\n', '').replace('\t', '').strip()  # pretty sure we break this out. Can look later or we can do in kettle
         dec_table = details.xpath('.//table[@id="decisions"]')  # pulling out to work with easier
-        decision_1 = {}
+        decision_1 = {'dec_date': '', 'dec_art': '', 'pub_date': '', 'pub_journ': '', 'text_date': '', 'dec_text': ''}
         decisions = []
         for index, row in enumerate(dec_table.xpath('./tr')[1:]):  # I don't know how I feel about this...
             if (index > 0 and row.xpath('./td[descendant::strong]')) or index == len(dec_table.xpath('./tr')[1:]):
                 decisions.append(decision_1)
-                decision_1 = {}
+                decision_1 = {'dec_date': '', 'dec_art': '', 'pub_date': '', 'pub_journ': '', 'text_date': '',
+                              'dec_text': ''}
             else:  # these might need to have all possible values but for ease I'm only adding what exists
                 if row.xpath('./td[1]/strong/text()'):
-                    decision_1['dec_date'] += row.xpath('./td[1]/strong/text()').get()
+                    decision_1['dec_date'] = row.xpath('./td[1]/strong/text()').get()
                 if row.xpath('./td[2]/strong/text()'):
-                    decision_1['dec_art'] += row.xpath('./td[2]/strong/text()').re(r"Art. ([\d\(\)\w]*)")
+                    decision_1['dec_art'] = row.xpath('./td[2]/strong/text()').re(r"Art. ([\d\(\)\w]*)")
                 if row.xpath('./td[contains(text(), "Publication")]/following-sibling::td/table//td/text()'):
-                    decision_1['pub_date'] += row.xpath('./td[contains(text(), '
+                    decision_1['pub_date'] = row.xpath('./td[contains(text(), '
                                                         '"Publication")]/following-sibling::td/table//td/text()') \
-                        .re(r"\d{2}\.\d{2}\.\d{4}")
-                    decision_1['pub_journ'] += row.xpath('./td[contains(text(), '
+                        .re(r"\d{2}\.\d{2}\.\d{4}")[0]
+                    decision_1['pub_journ'] = row.xpath('./td[contains(text(), '
                                                          '"Publication")]/following-sibling::td/table//a/text()').get()
                 if row.xpath('./td[contains(text(), "Press release")]/following-sibling::td/table//a/text()'):
                     decision_1['pr'] = row.xpath('./td[contains(text(), "Press release")]/'
