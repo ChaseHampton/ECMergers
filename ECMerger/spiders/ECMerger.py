@@ -6,9 +6,8 @@ from ..items import EcmergerItem
 class Merger(scrapy.Spider):
     name = 'Merger'
 
-    def __init(self, reset=False, skip=False, **kwargs):
+    def __init(self, reset=False, **kwargs):
         self.reset = reset
-        self.skip = skip
         super().__init__(**kwargs)
 
     url = 'https://ec.europa.eu/competition/elojade/isef/index.cfm?fuseaction=dsp_result&policy_area_id=1'
@@ -141,12 +140,16 @@ class Merger(scrapy.Spider):
                 '//tr/td[contains(text(), "Notification")]/following-sibling::td/text()').get().replace('\r',
                                                                                                         '').replace(
                 '\n', '').replace('\t', '')
+        else:
+            notif_date = ''
         if details.xpath(
                 '//tr/td[contains(text(), "Provisional")]/following-sibling::td/text()'):
             prov_deadline = details.xpath(
                 '//tr/td[contains(text(), "Provisional")]/following-sibling::td/text()').get().replace('\r',
                                                                                                        '').replace(
                 '\n', '').replace('\t', '')
+        else:
+            prov_deadline = ''
         prior_pub_node = details.xpath('.//tr/td[contains(text(), "Prior publication")]/following-sibling::td')
         journal_no = prior_pub_node.xpath('./a/text()').get()
         if prior_pub_node.xpath('./text()').re(r"\d{2}\.\d{2}\.\d{4}"):
@@ -175,7 +178,7 @@ class Merger(scrapy.Spider):
                 if row.xpath('./td[1]/strong/text()'):
                     decision_1['dec_date'] = row.xpath('./td[1]/strong/text()').get()
                 if row.xpath('./td[2]/strong/text()'):
-                    decision_1['dec_art'] = row.xpath('./td[2]/strong/text()')  # .re(r"Art. ([\d\(\)\w]*)") Not
+                    decision_1['dec_art'] = row.xpath('./td[2]/strong/text()').get()  # .re(r"Art. ([\d\(\)\w]*)") Not
                     # always articles, need to look at what this field actually needs to be so collect all for now
                 if row.xpath('./td[contains(text(), "Publication")]/following-sibling::td/table//td/text()'):
                     decision_1['pub_date'] = row.xpath('./td[contains(text(), '
@@ -200,7 +203,7 @@ class Merger(scrapy.Spider):
                 if row.xpath('./td[1]/strong/text()'):
                     decision_1['dec_date'] = row.xpath('./td[1]/strong/text()').get()
                 if row.xpath('./td[2]/strong/text()'):
-                    decision_1['dec_art'] = row.xpath('./td[2]/strong/text()').re(r"Art. ([\d\(\)\w]*)")
+                    decision_1['dec_art'] = row.xpath('./td[2]/strong/text()').get()
                 if row.xpath('./td[contains(text(), "Publication")]/following-sibling::td/table//td/text()'):
                     decision_1['pub_date'] = row.xpath('./td[contains(text(), '
                                                        '"Publication")]/following-sibling::td/table//td/text()') \
