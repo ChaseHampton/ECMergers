@@ -78,7 +78,7 @@ class Merger(scrapy.Spider):
         if int(response.xpath('//input[@value="Next"]/@onclick').re(r"\d{2,4}")[0]) <= int(total_rows):
             page = response.css('.list').xpath('tr[not(descendant::td[contains(@id, "test")])]')
             from_row = response.xpath('//input[@value="Next"]/@onclick').re(r"\d{2,4}")
-            self.form_data['fromrow'] = '8472'  # from_row
+            self.form_data['fromrow'] = '8474'  # from_row
             self.form_data['fuseaction'] = 'dsp_result'
             self.form_data['sort'] = 'case_code asc'
             self.logger.info(f"starting at row: {self.form_data['fromrow']} of {total_rows}")
@@ -172,9 +172,6 @@ class Merger(scrapy.Spider):
         decisions = []
         for index, row in enumerate(dec_table.xpath('./tr')[1:]):  # I don't know how I feel about this...
             if (index > 0 and row.xpath('./td[descendant::strong]')) or index == len(dec_table.xpath('./tr')[1:]) - 1:
-                decisions.append(decision_1)
-                decision_1 = {'dec_date': '', 'dec_art': '', 'pub_date': '', 'pub_journ': '', 'pr': '', 'text_date': '',
-                              'dec_text': ''}
                 if row.xpath('./td[1]/strong/text()'):
                     decision_1['dec_date'] = row.xpath('./td[1]/strong/text()').get()
                 if row.xpath('./td[2]/strong/text()'):
@@ -199,6 +196,8 @@ class Merger(scrapy.Spider):
                     decision_1['dec_text'] = " ".join(row.xpath('./td[contains(text(), "Decision text")]/'
                                                                 'following-sibling::td//a[not(count(img))]/text()').
                                                       getall())  # I just figured we might have multiples
+                decisions.append(decision_1)
+                decision_1 = {}
             else:  # these might need to have all possible values but for ease I'm only adding what exists
                 if row.xpath('./td[1]/strong/text()'):
                     decision_1['dec_date'] = row.xpath('./td[1]/strong/text()').get()
@@ -220,16 +219,16 @@ class Merger(scrapy.Spider):
                     decision_1['dec_text'] = " ".join(row.xpath('./td[contains(text(), "Decision text")]/'
                                                                 'following-sibling::td//a[not(count(img))]/text()').
                                                       getall())  # I just figured we might have multiples
-            relation = details.xpath('//td[contains(text(), "Relation")]//following-sibling::td/text()').get(). \
-                replace('\r', '').replace('\n', '').replace('\t', '').strip()
-            other = " ".join([item.replace('\r', '').replace('\n', '').replace('\t', '').strip() for item in details.
-                             xpath('./tr')[-2].xpath('./td[2]//text()').getall() if
-                              len(item.replace('\r', '').replace('\n', '').replace('\t', '').strip()) != 0])  # neat.
-            # The preceding td could be removed, but we can do that later
-            related = " ".join([item.replace('\r', '').replace('\n', '').replace('\t', '').strip() for item
-                                in details.xpath('./tr')[-1].xpath('./td[2]//text()').getall() if
-                                len(item.replace('\r', '').replace('\n', '').replace('\t', '').strip()) != 0])  # same
-            # with this we can clean up later but the selector should work (fingers crossed)
+        relation = details.xpath('//td[contains(text(), "Relation")]//following-sibling::td/text()').get(). \
+            replace('\r', '').replace('\n', '').replace('\t', '').strip()
+        other = " ".join([item.replace('\r', '').replace('\n', '').replace('\t', '').strip() for item in details.
+                         xpath('./tr')[-2].xpath('./td[2]//text()').getall() if
+                          len(item.replace('\r', '').replace('\n', '').replace('\t', '').strip()) != 0])  # neat.
+        # The preceding td could be removed, but we can do that later
+        related = " ".join([item.replace('\r', '').replace('\n', '').replace('\t', '').strip() for item
+                            in details.xpath('./tr')[-1].xpath('./td[2]//text()').getall() if
+                            len(item.replace('\r', '').replace('\n', '').replace('\t', '').strip()) != 0])  # same
+        # with this we can clean up later but the selector should work (fingers crossed)
 
         for comp in comps:
             item['policy'] = response.meta['policy']
