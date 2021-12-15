@@ -168,7 +168,7 @@ class Merger(scrapy.Spider):
         "Regulation")]/following-sibling::td/text()').get().replace('\r', '').replace(
             '\n', '').replace('\t', '').strip()  # pretty sure we break this out. Can look later or we can do in kettle
         dec_table = details.xpath('.//table[@id="decisions"]')  # pulling out to work with easier
-        decision_1 = {'dec_date': '', 'dec_art': '', 'pub_date': '', 'pub_journ': '', 'text_date': '', 'dec_text': ''}
+        decision_1 = {}
         decisions = []
         for index, row in enumerate(dec_table.xpath('./tr')[1:]):  # I don't know how I feel about this...
             if (index > 0 and row.xpath('./td[descendant::strong]')) or index == len(dec_table.xpath('./tr')[1:]) - 1:
